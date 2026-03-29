@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Chip Fact Checker",
-  "version": "1.0.0",
-  "description": "One-click fact-checking for Reddit posts and comments",
+  "version": "2.0.0",
+  "description": "One-click fact-checking for Reddit, Facebook, Twitter, and more with current news grounding",
   "permissions": [
     "activeTab",
     "scripting",
@@ -10,7 +10,11 @@
   ],
   "host_permissions": [
     "https://www.reddit.com/*",
-    "https://reddit.com/*"
+    "https://reddit.com/*",
+    "https://facebook.com/*",
+    "https://www.facebook.com/*",
+    "https://twitter.com/*",
+    "https://x.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -18,7 +22,17 @@
   "content_scripts": [
     {
       "matches": ["https://www.reddit.com/*", "https://reddit.com/*"],
-      "js": ["content.js"],
+      "js": ["platforms/reddit.js"],
+      "css": ["styles.css"]
+    },
+    {
+      "matches": ["https://facebook.com/*", "https://www.facebook.com/*"],
+      "js": ["platforms/facebook.js"],
+      "css": ["styles.css"]
+    },
+    {
+      "matches": ["https://twitter.com/*", "https://x.com/*"],
+      "js": ["platforms/twitter.js"],
       "css": ["styles.css"]
     }
   ],
