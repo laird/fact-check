@@ -1,325 +1,97 @@
-# 🔍 Chip Fact Checker
+# fact-check (Chip Fact Checker)
 
-**One-click fact-checking for Reddit, Facebook, Twitter/X, and more — powered by local AI with current news grounding.**
+A browser extension plus a local Python backend that adds a **Fact Check** button on Reddit (posts and comments), Facebook, and Twitter/X. The backend splits that text into sentences and asks a local [Ollama](https://ollama.com) model for a verdict on each one.
 
----
+This is a personal/experimental project, not a packaged store extension. It does **not** fetch live news. The news context in `backend-server-v2.py` is a fixed event list (one entry says "as of March 26"), and the prompt stamps today's date from the server clock. Verdicts are only as good as the local model and that list.
 
-## Features
+## What you need
 
-✅ **Multi-Platform Support**
-- 🟠 Reddit posts and comments
-- 📘 Facebook posts and feeds
-- 🐦 Twitter/X tweets and replies
-- More platforms coming soon!
+- Python 3.8 or later
+- [Ollama](https://ollama.com/download) running locally
+- Enough RAM/VRAM to run `qwen3-coder:30b` (or change `MODEL` in `backend-server-v2.py` to a smaller model)
+- Chrome, Edge, or Firefox
 
-✅ **Current News Grounding**
-- Checks claims against real-time news (March 2026 context)
-- Not limited to training data
-- Updated daily with current events
+## Install
 
-✅ **One-Click Fact-Checking**
-- Click "🔍 Fact Check" on any post
-- Get results in seconds
-- Beautiful modal UI with detailed breakdown
-
-✅ **Privacy-First**
-- All analysis happens locally (no cloud)
-- No data collection or tracking
-- No ads or telemetry
-
-✅ **Accurate Analysis**
-- Uses qwen3-coder:30b AI model
-- Confidence scores (0-100%)
-- Explains reasoning for each verdict
-
----
-
-## Installation
-
-### Quick Start (3 Steps)
-
-#### 1️⃣ Start Backend Server
 ```bash
+git clone https://github.com/laird/fact-check.git
+cd fact-check
+
+# Install Ollama from https://ollama.com/download, then pull the model the backend expects
+ollama pull qwen3-coder:30b
+
+python3 -m venv venv
+source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install flask requests
+
 python3 backend-server-v2.py
 ```
 
-#### 2️⃣ Install Extension
-- **Chrome/Edge:** Go to `chrome://extensions` → **Load unpacked** → Select this folder
-- **Firefox:** Go to `about:debugging` → **Load Temporary Add-on** → Select `manifest.json`
+The API listens on `http://localhost:8000`. Leave that process running.
 
-#### 3️⃣ Visit Social Media
-- Go to Reddit, Facebook, or Twitter/X
-- Click **"🔍 Fact Check"** on any post
-- See results! 📊
+### Load the extension
 
----
+**Chrome / Edge**
 
-## How It Works
+1. Open `chrome://extensions` or `edge://extensions`.
+2. Turn on **Developer mode**.
+3. Click **Load unpacked** and select this `fact-check` folder.
 
-```
-Social Media Post
-       ↓
-Extension detects post (Reddit/Facebook/Twitter/X)
-       ↓
-User clicks "🔍 Fact Check" button
-       ↓
-Backend fetches CURRENT NEWS context
-       ↓
-AI analyzes claims vs current facts
-       ↓
-Shows verdict: ✅ True / ❌ False / ⏳ Unverifiable
-       ↓
-Results displayed in beautiful modal
-```
+**Firefox**
 
-### Technology Stack
+1. Open `about:debugging`, then **This Firefox**.
+2. Click **Load Temporary Add-on** and select `manifest.json`.
+   Temporary add-ons are removed when Firefox quits.
 
-| Component | Technology |
-|-----------|-----------|
-| **Frontend** | Browser Extension (MV3) |
-| **Backend** | Flask (Python) |
-| **AI Model** | qwen3-coder:30b (Ollama) |
-| **News Context** | Current web search |
-| **Storage** | Browser cache (1 hour TTL) |
+## First run
 
----
+1. Confirm the backend is up: `curl http://localhost:8000/health`
+   Expect HTTP 200. `"status": "ok"` and `"ollama": "online"` mean Ollama answered `http://localhost:11434/api/tags`. `"status": "degraded"` and `"ollama": "offline"` mean it did not.
+2. Open Reddit, Facebook, or Twitter/X and refresh the page.
+3. Click **Fact Check** on a post. Results appear in a modal on the page.
 
-## Platform-Specific Details
+Optional API check. After punctuation is stripped, a sentence has to be longer than 20 characters or the backend will not send it to the model:
 
-### Reddit
-- Works on posts and comments
-- Supports nested threads
-- Auto-detects infinite scroll
-
-### Facebook
-- Works on user posts and feed
-- Supports image posts with captions
-- Works with video descriptions
-
-### Twitter/X
-- Works on tweets and replies
-- Supports quote tweets
-- Detects new tweets automatically
-
----
-
-## Results Format
-
-Each fact-check returns:
-
-```json
-{
-  "claims": [
-    {
-      "text": "The claim being analyzed",
-      "verdict": "true|false|unverifiable",
-      "confidence": 85,
-      "reasoning": "Why this verdict based on current facts"
-    }
-  ],
-  "summary": "Overall summary of findings",
-  "context_date": "2026-03-28"
-}
+```bash
+curl -X POST http://localhost:8000/api/factcheck \
+  -H "Content-Type: application/json" \
+  -d '{"text": "The Eiffel Tower is in Paris."}'
 ```
 
-### Verdict Meanings
+The model is prompted for `verdict` of `"true"`, `"false"`, or `"unclear"`, and for `confidence` from 0.0 to 1.0. If those fields are missing, the API fills in `"unclear"` and `0.5`.
 
-| Verdict | Meaning |
-|---------|---------|
-| **✅ True** | Claim is supported by current facts/news |
-| **❌ False** | Claim contradicts current facts/news |
-| **⏳ Unverifiable** | Cannot verify against available information |
+## How it actually works
 
----
+1. A content script injects a button on supported sites (`platforms/reddit.js` on posts and comments, `facebook.js` and `twitter.js` on posts).
+2. The extension posts the extracted text to `POST /api/factcheck`.
+3. Text longer than 5000 characters is rejected. Otherwise the backend splits on `.`, `!`, and `?`, keeps at most 10 sentences longer than 20 characters, calls Ollama for each of those, and returns JSON. A sentence is omitted when Ollama errors, times out, or returns text that is not JSON.
 
-## Configuration
-
-### Backend Server
-
-Edit `backend-server-v2.py`:
+The model setting is in `backend-server-v2.py`:
 
 ```python
 OLLAMA_URL = "http://localhost:11434/api/generate"
 MODEL = "qwen3-coder:30b"
 ```
 
-### Extension
+`qwen3-coder` is a coding model. If fact-checking quality is poor, try a general chat model and update `MODEL`.
 
-Edit `manifest.json` to customize:
-- Permissions
-- Platform support
-- Icons and styling
+Each claim object has `text`, `verdict`, `confidence`, `reasoning`, `related_events`, and `requires_verification`. The response also has `summary`, `total_claims`, `false_count` (verdict exactly `"false"`), `unverified_count` (claims whose `requires_verification` is true), and `context_date` (`YYYY-MM-DD`).
 
----
+## Privacy
 
-## API Reference
-
-### POST /api/factcheck
-Analyzes text for factual claims.
-
-**Request:**
-```json
-{
-  "text": "Trump deployed ICE agents to airports"
-}
-```
-
-**Response:**
-```json
-{
-  "claims": [...],
-  "summary": "Verdict summary",
-  "context_date": "2026-03-28"
-}
-```
-
-### GET /api/news
-Returns current news context used for fact-checking.
-
-### GET /health
-Health check endpoint.
-
----
-
-## Performance
-
-- **Extension Size:** ~100KB total
-- **Analysis Time:** 1-2 seconds per post
-- **Accuracy:** 85-95% confidence on average
-- **Cache:** 1 hour (reduces redundant checks)
-- **Memory:** ~500MB (Ollama model in VRAM)
-
----
+Analysis runs on your machine through local Ollama. The extension does not upload posts to a fact-check vendor. That is not the same as "no network use at all": the page is still a social-media site, and the backend does not currently call a live news API despite some older wording.
 
 ## Troubleshooting
 
-### Backend won't start
-```bash
-# Check Ollama is running
-curl http://localhost:11434/api/tags
+| Problem | What to try |
+|---|---|
+| Backend will not start | `curl http://localhost:11434/api/tags` — start Ollama if that fails; `ollama pull` the configured model |
+| `Address already in use` | Another process owns port 8000 |
+| No Fact Check button | Refresh the page; confirm the extension is enabled and the site is reddit.com, facebook.com, twitter.com, or x.com |
+| Timeouts | The backend uses a 30-second timeout *per claim*. Long posts are slow. Try a smaller model. |
 
-# If not:
-systemctl --user start ollama
-```
-
-### Extension not showing buttons
-1. Refresh the page
-2. Check browser console (F12) for errors
-3. Verify backend is running (http://localhost:8000)
-
-### Fact-check taking too long
-- Large posts with many claims take longer
-- Each claim analyzed sequentially (1-2s each)
-- Try shorter posts first
-
-### Results seem wrong
-- Fact-checker uses CURRENT NEWS (March 2026)
-- Not limited to training knowledge
-- If wrong, backend server may not be running
-
----
-
-## Development
-
-### Project Structure
-```
-.
-├── manifest.json              # Extension v2.0 multi-platform
-├── popup.html                 # Results modal UI
-├── styles.css                 # Styling
-├── background.js              # Service worker
-├── platforms/
-│   ├── reddit.js             # Reddit content script
-│   ├── facebook.js            # Facebook content script
-│   └── twitter.js             # Twitter/X content script
-├── backend-server-v2.py       # Flask API with news context
-├── images/
-│   ├── icon-16.png
-│   ├── icon-48.png
-│   ├── icon-128.png
-│   └── icon.svg
-├── README.md                  # This file
-└── SETUP.md                   # Setup guide
-```
-
-### Adding a New Platform
-
-1. Create `platforms/[platform].js`:
-```javascript
-// Detect posts
-const POST_SELECTORS = [...];
-
-// Extract content
-function getPostContent(element) { ... }
-
-// Create button
-function createFactCheckButton(element) { ... }
-
-// Process posts
-function processPosts() { ... }
-```
-
-2. Update `manifest.json`:
-```json
-{
-  "matches": ["https://[platform].com/*"],
-  "js": ["platforms/[platform].js"]
-}
-```
-
-3. Test and commit!
-
----
-
-## Privacy Policy
-
-- ✅ All processing is local (no cloud upload)
-- ✅ No data collection or analytics
-- ✅ No tracking or advertising
-- ✅ Cache is local to your browser
-- ✅ No third-party integrations
-
----
+Related write-ups in this repo (`INSTALL.md`, `SETUP.md`, `QUICK_START.md`) overlap this README and have drifted. Prefer this file, or fold those guides into it so there is a single source of truth.
 
 ## License
 
-MIT License - Free to use, modify, and distribute!
-
----
-
-## Contributing
-
-Found a bug? Have a feature request?
-
-1. Fork the repo
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
-
----
-
-## Support
-
-- 📖 **Setup:** See [SETUP.md](SETUP.md)
-- 🐛 **Issues:** Open an issue on GitHub
-- 💬 **Questions:** Comment on the README
-
----
-
-## Roadmap
-
-- [ ] LinkedIn support
-- [ ] TikTok support
-- [ ] YouTube comments support
-- [ ] Configurable news sources
-- [ ] Dark mode UI
-- [ ] Fact-check history/bookmarks
-- [ ] Share fact-checks with others
-- [ ] Custom fact-checking rules
-
----
-
-**Made with ❤️ by Chip**
-
-*The best fact-checker is one you use every day.* 🔥
+The README previously said MIT, but there is no `LICENSE` file. Add one if you want others to reuse the code.
